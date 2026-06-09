@@ -1,0 +1,5 @@
+portfwd-state/
+tsnet-portfwd
+tsnet-portfwd-linux
+*.exe
+.env
