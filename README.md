@@ -21,6 +21,8 @@
 
 ## アーキテクチャ
 
+### 全体構成 (ASCII)
+
 ```
 [クライアント (例: 手元の Mac)]
 
@@ -48,6 +50,47 @@
    [TARGET (localhost または LAN 内の任意ホスト)]
    例: localhost:5432 (Postgres)
         192.168.X.X:80 (内部 nginx)
+```
+
+### 通信シーケンス (Mermaid)
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant C as Client (任意のピア)
+    participant T as tailnet
+    participant G as Gateway<br/>(tsnet-portfwd プロセス)
+    participant Tgt as Target<br/>(localhost:5432 等)
+
+    C->>T: TCP connect <portfwd-host>:LISTEN_PORT
+    T->>G: tailnet 経由で配送<br/>(WireGuard P2P or DERP)
+    G->>G: ln.Accept() → goroutine 起動
+    G->>Tgt: net.Dial("TARGET_HOST:PORT")
+    Tgt-->>G: TCP connection
+    G-->>C: 双方向 io.Copy 開始
+    par bytes flowing
+        C->>G: payload
+        G->>Tgt: io.Copy(local, remote)
+    and
+        Tgt->>G: payload
+        G->>C: io.Copy(remote, local)
+    end
+    Note over G,Tgt: target の routing は<br/>ゲートウェイ OS 任せ<br/>(localhost / LAN ホスト どちらでも OK)
+```
+
+### ssh -R との対応関係 (Mermaid)
+
+```mermaid
+flowchart LR
+    subgraph ssh["ssh -R 5432:localhost:5432 user@gateway"]
+        A1[Client] -->|ssh tunnel| A2[gateway:sshd]
+        A2 -->|forward| A3["localhost:5432<br/>(gateway 上)"]
+    end
+    subgraph tsnet["tsnet-portfwd"]
+        B1[Client] -->|tailnet| B2[portfwd-vpnsv:15555]
+        B2 -->|net.Dial| B3["localhost:5432<br/>(gateway 上)"]
+        B2 -.->|target= 別ホストも可| B4["192.168.X.X:80<br/>(LAN 内)"]
+    end
 ```
 
 ## 前提
