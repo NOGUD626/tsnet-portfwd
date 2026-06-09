@@ -1,6 +1,6 @@
 # tsnet-portfwd
 
-> A `ssh -R`-equivalent port forwarder built on **tsnet**. Expose any local or LAN-reachable service to your self-hosted **Headscale** tailnet — without ssh sessions or open firewall ports.
+> `tsnet` で実装した **`ssh -R` 相当の port forwarder**。 ローカル / LAN 内の任意の TCP サービスを自前 **Headscale** の tailnet に公開する。 ssh セッションも、 ファイアウォール開放も不要。
 
 [![Go Reference](https://pkg.go.dev/badge/tailscale.com/tsnet.svg)](https://pkg.go.dev/tailscale.com/tsnet)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
@@ -14,71 +14,71 @@
 |---|---|---|
 | 認証 | SSH パスワード / 鍵 | **Tailscale 端末認証** (+ Headscale ACL) |
 | セッション | ssh セッションに紐づく、 切れたら停止 | **プロセス常駐**、 ssh セッション不要 |
-| 公開範囲 | サーバ側の `localhost` (or `GatewayPorts yes`) | **tailnet 全体に MagicDNS で公開** |
-| 暗号化 | SSH トンネル | **WireGuard (P2P) or DERP リレー** |
-| 多重化 | 1 セッションで複数 forward | プロセス 1 つで listen 何本でも |
+| 公開範囲 | サーバ側の `localhost` (または `GatewayPorts yes`) | **tailnet 全体に MagicDNS で公開** |
+| 暗号化 | SSH トンネル | **WireGuard (P2P) または DERP リレー** |
+| 多重化 | 1 セッションで複数 forward | プロセス 1 つで listen 何本でも (複数立てれば別ノード) |
 | 障害分離 | SSH 全体が落ちる | port forward 単体プロセスだけ kill 可能 |
 
 ## アーキテクチャ
 
 ```
-[Client (e.g. your laptop)]                                     
-                                                                 
- ┌──────────────────┐                                            
- │ Tailscale client │                                            
- │ (official app or │                                            
- │  another tsnet)  │                                            
- └────────┬─────────┘                                            
-          │  nc <portfwd-hostname> <LISTEN_PORT>                 
-          │  curl http://<portfwd-hostname>:<LISTEN_PORT>/       
-          ▼                                                       
-    [tailnet] (WireGuard P2P or DERP)                            
-          │                                                       
-          ▼                                                       
-[Gateway machine (e.g. your home server)]                        
-                                                                 
- ┌──────────────────────────────────────┐                        
- │ tsnet-portfwd process                │                        
- │   srv.Listen(":LISTEN_PORT")         │                        
- │   net.Dial("TARGET_HOST:PORT")       │                        
- │   double io.Copy()                   │                        
- └────────┬─────────────────────────────┘                        
-          │                                                       
-          ▼                                                       
-   [TARGET (localhost or any LAN host)]                          
-   e.g. localhost:5432 (Postgres)                                
-        192.168.X.X:80 (internal nginx)                          
+[クライアント (例: 手元の Mac)]
+
+ ┌──────────────────┐
+ │ Tailscale クライアント│
+ │ (公式アプリ or     │
+ │  別の tsnet バイナリ) │
+ └────────┬─────────┘
+          │  nc <portfwd-hostname> <LISTEN_PORT>
+          │  curl http://<portfwd-hostname>:<LISTEN_PORT>/
+          ▼
+    [tailnet] (WireGuard P2P または DERP リレー)
+          │
+          ▼
+[ゲートウェイマシン (例: 自宅サーバ)]
+
+ ┌──────────────────────────────────────┐
+ │ tsnet-portfwd プロセス               │
+ │   srv.Listen(":LISTEN_PORT")         │
+ │   net.Dial("TARGET_HOST:PORT")       │
+ │   双方向 io.Copy()                    │
+ └────────┬─────────────────────────────┘
+          │
+          ▼
+   [TARGET (localhost または LAN 内の任意ホスト)]
+   例: localhost:5432 (Postgres)
+        192.168.X.X:80 (内部 nginx)
 ```
 
-## Prerequisites
+## 前提
 
-- Go 1.21+ on the build machine
-- Self-hosted [Headscale](https://github.com/juanfont/headscale) (v0.28+ recommended)
-- A target machine where you'll run `tsnet-portfwd` (it needs network reach to the `-target` host:port)
+- Go 1.21+ (ビルドマシン)
+- 自前 [Headscale](https://github.com/juanfont/headscale) (v0.28+ 推奨)
+- `tsnet-portfwd` を動かすホスト (`-target` の host:port に OS routing で到達できる必要がある)
 
-## Quick Start
+## クイックスタート
 
-### 1. Build (with optional cross-compile for Linux servers)
+### 1. ビルド (Linux サーバ向けクロスコンパイルも併記)
 
 ```bash
 git clone https://github.com/NOGUD626/tsnet-portfwd.git
 cd tsnet-portfwd
 go mod tidy
-go build -o tsnet-portfwd .                          # native (host OS)
+go build -o tsnet-portfwd .                          # 実行マシン向け
 
-# Or cross-compile for a Linux server
+# Linux サーバ向けにクロスコンパイル
 GOOS=linux GOARCH=amd64 go build -o tsnet-portfwd-linux .
 scp tsnet-portfwd-linux user@gateway:/tmp/
 ```
 
-### 2. Issue a pre-auth key
+### 2. 事前認証キーを発行
 
 ```bash
 ssh <HEADSCALE_HOST> 'sudo headscale preauthkey create -u <USER_ID> -e 1h --reusable'
 # → "hskey-auth-XXXX..." を取得
 ```
 
-### 3. Run on the gateway machine
+### 3. ゲートウェイマシンで実行
 
 ```bash
 export TS_AUTHKEY=hskey-auth-XXXX...
@@ -89,17 +89,17 @@ export TS_AUTHKEY=hskey-auth-XXXX...
     -target localhost:5432
 ```
 
-### 4. Access from any tailnet peer
+### 4. tailnet 内の任意ピアからアクセス
 
 ```bash
-# MagicDNS-aware client
+# MagicDNS が効くクライアントなら
 nc my-portfwd 15555
 
-# Or via tailnet IP directly
+# Tailscale IP 直接でも可
 nc 100.64.0.X 15555
 ```
 
-## Usage
+## 使い方 (フラグ一覧)
 
 ```text
 Usage of ./tsnet-portfwd:
@@ -116,50 +116,50 @@ Usage of ./tsnet-portfwd:
   -v    tsnet の詳細ログを表示
 ```
 
-## Examples
+## 例
 
-### 1) Expose a local PostgreSQL to tailnet (classic `ssh -R 5432:localhost:5432`)
+### 1) ローカル PostgreSQL を tailnet に公開 (古典的な `ssh -R 5432:localhost:5432`)
 
 ```bash
 ./tsnet-portfwd -hostname pg-bridge -listen :5432 -target localhost:5432
-# Any peer:
+# 任意のピアから:
 psql -h pg-bridge -p 5432 -U user dbname
 ```
 
-### 2) Expose another LAN host through this gateway
+### 2) LAN 内の別ホストをゲートウェイ越しに公開
 
-`-target` is not limited to `localhost` — anything reachable from the gateway's OS routing works:
+`-target` は `localhost` に限らない。 ゲートウェイの OS routing で到達できれば何でも OK。
 
 ```bash
 ./tsnet-portfwd -hostname web-bridge -listen :18080 -target 192.168.X.X:80
-# Any peer:
+# 任意のピアから:
 curl http://web-bridge:18080/
 curl -H 'Host: internal-app.example' http://web-bridge:18080/
 ```
 
-### 3) Bridge SSH itself (so peers can ssh through your gateway by hostname)
+### 3) SSH 自体をブリッジ (ピアがホスト名で gateway 越し ssh できる)
 
 ```bash
 ./tsnet-portfwd -hostname ssh-bridge -listen :12222 -target localhost:22
 ssh -p 12222 user@ssh-bridge
 ```
 
-### 4) Multiple forwards on the same machine
+### 4) 同じマシンで複数 forward を並走
 
-Just run multiple processes with different `-hostname` / `-listen` / `-state-dir`:
+`-hostname` / `-listen` / `-state-dir` を変えて複数プロセスを起動するだけ:
 
 ```bash
 ./tsnet-portfwd -hostname pg-bridge  -listen :5432 -target localhost:5432  -state-dir ./pg-state &
 ./tsnet-portfwd -hostname web-bridge -listen :18080 -target 192.168.X.X:80 -state-dir ./web-state &
 ```
 
-Each registers as its **own tailnet node** with its own Tailscale IP.
+各プロセスが **独立した tailnet ノード** として登録され、 それぞれ Tailscale IP を持つ。
 
-## How it works
+## 内部で何が起きているか
 
 ```
-1. srv.Up()                  : join the tailnet, get a Tailscale IP
-2. ln := srv.Listen(LISTEN)  : start a userspace TCP listener inside tsnet
+1. srv.Up()                  : tailnet に参加して Tailscale IP を取得
+2. ln := srv.Listen(LISTEN)  : tsnet 内に userspace TCP listener を起動
 3. for { conn := ln.Accept() ; go handle(conn) }
 4. handle:
      local, _ := net.Dial("tcp", TARGET)
@@ -167,25 +167,25 @@ Each registers as its **own tailnet node** with its own Tailscale IP.
      go io.Copy(conn, local)       // target → peer
 ```
 
-中身は **double `io.Copy`** だけ。 ssh -R が `ssh` の bytestream の中でやっているのと同じことを、 WireGuard の bytestream の中でやっている。
+中身は **双方向 `io.Copy`** だけ。 ssh -R が `ssh` の bytestream の中でやっていることを、 WireGuard の bytestream の中でやっている。
 
-## Troubleshooting
+## トラブルシューティング
 
 | 症状 | 対処 |
 |---|---|
 | `tsnet up failed: 401 Unauthorized` | AuthKey が期限切れ or 既に使用済。 新規発行 (`headscale preauthkey create`) |
 | `tsnet up failed: tls handshake failed` | Headscale 側の TLS / リバースプロキシ設定を確認 |
-| `Dial: i/o timeout` (target が LAN ホスト) | gateway の OS から target に到達できるか確認、 同 LAN なら問題ないはず |
+| `Dial: i/o timeout` (target が LAN ホスト) | ゲートウェイ OS から target に到達できるか確認 (同 LAN なら通常 OK) |
 | MagicDNS で名前解決できない | クライアント側で `tailscale set --accept-dns=true` |
 | 2 回目に hostname 重複エラー | `headscale nodes delete -i <ID>` で旧ノード削除 or `-state-dir` を変える |
 
-## Cleanup
+## 片付け
 
 ```bash
-# 1. プロセス停止
+# 1. プロセスを止める
 pkill tsnet-portfwd
 
-# 2. ローカル state
+# 2. ローカル state を削除
 rm -rf ./portfwd-state
 
 # 3. Headscale 側からノード削除
@@ -193,25 +193,25 @@ ssh <HEADSCALE_HOST> 'sudo headscale nodes list'
 ssh <HEADSCALE_HOST> 'sudo headscale nodes delete -i <ID> --force'
 ```
 
-## Extension ideas
+## 拡張アイデア
 
 | アイデア | 実装の方向 |
 |---|---|
-| **WhoIs ベース ACL** | `LocalClient().WhoIs(conn.RemoteAddr())` で接続元 Tailscale ID 取得 → 許可リスト判定 |
+| **WhoIs ベース ACL** | `LocalClient().WhoIs(conn.RemoteAddr())` で接続元 Tailscale ID を取得して許可リスト判定 |
 | **TLS 終端** | `srv.ListenTLS(":443")` で Let's Encrypt 連携相当の HTTPS リバプロ化 |
-| **複数 target round-robin** | target を `host1:80,host2:80` カンマ区切り、 順番に Dial |
+| **複数 target のラウンドロビン** | target を `host1:80,host2:80` のカンマ区切りに、 順番に Dial |
 | **アクセスログ** | accept のたびに JSON で structured log 出力 |
-| **メトリクス** | Prometheus exporter を同居させる |
+| **メトリクス** | Prometheus exporter を同居 |
 
-## Related
+## 関連プロジェクト
 
-- [tsnet package documentation](https://pkg.go.dev/tailscale.com/tsnet)
-- [Headscale](https://github.com/juanfont/headscale) — Open source, self-hosted Tailscale coordination server
-- [`tsnet-demo`](https://github.com/NOGUD626/tsnet-demo) — Sister project: tailnet join + Ping/Dial verification
-- [shayne/tsnet-serve](https://github.com/shayne/tsnet-serve) — More feature-rich, with TLS / Funnel / path filtering
+- [tsnet パッケージドキュメント](https://pkg.go.dev/tailscale.com/tsnet)
+- [Headscale](https://github.com/juanfont/headscale) — オープンソースの Tailscale コーディネーションサーバ
+- [`tsnet-demo`](https://github.com/NOGUD626/tsnet-demo) — 姉妹リポジトリ: tailnet 参加 + Ping/Dial 検証
+- [shayne/tsnet-serve](https://github.com/shayne/tsnet-serve) — TLS / Funnel / パスフィルタ等まで含む高機能版
 
-## License
+## ライセンス
 
 [MIT](LICENSE)
 
-Tailscale and `tsnet` themselves are © Tailscale Inc., licensed under [BSD-3-Clause](https://github.com/tailscale/tailscale/blob/main/LICENSE).
+Tailscale および `tsnet` 自体は © Tailscale Inc.、 [BSD-3-Clause](https://github.com/tailscale/tailscale/blob/main/LICENSE) で提供されています。
